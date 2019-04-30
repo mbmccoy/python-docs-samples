@@ -77,8 +77,8 @@ def dataflow_sub(project_id, subscription_name):
 
 
 def build_pipeline(project_id,  # type: AnyStr
-                   topic_name,   # type: AnyStr
-                   output_location,  # type: AnyStr
+                   input_subscription,  # type: AnyStr
+                   output_subscription,  # type: AnyStr
                    pipeline_args,  # type: List[AnyStr]
                    ):
     # type: (...) -> beam.Pipeline
@@ -90,7 +90,7 @@ def build_pipeline(project_id,  # type: AnyStr
     p = beam.Pipeline(options=pipeline_options)
 
     # Read the text file[pattern] into a PCollection.
-    messages = p | 'read' >> beam.io.ReadFromPubSub(topic=topic_name)
+    messages = p | 'read' >> beam.io.ReadFromPubSub(topic=input_subscription)
 
     # Count the occurrences of each word.
     def count_ones(word_ones):
@@ -111,9 +111,8 @@ def build_pipeline(project_id,  # type: AnyStr
 
     output = counts | 'format' >> beam.Map(format_result)
 
-    # Write the output using a "Write" transform that has side effects.
-    # pylint: disable=expression-not-assigned
-    output | 'write' >> WriteToText(output_location)
+    # Write to Pub/Sub
+    output | beam.io.WriteStringsToPubSub(known_args.output_topic)
 
     return p
 
@@ -130,10 +129,6 @@ def main(argv=None):
                         required=True,
                         help='Output file to write results to.')
 
-    parser = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter
-    )
     parser.add_argument('project_id', help='Google Cloud project ID')
     parser.add_argument('subscription_name', help='Pub/Sub subscription name')
 
@@ -141,6 +136,12 @@ def main(argv=None):
 
     dataflow_sub(known_args.project_id, pipeline_args.subscription_name)
 
+    p = build_pipeline(
+        project_id=known_args.project_id,
+        input_subscription=known_args.subscription_name,
+        output_subscription=known_args.output,
+        pipeline_args=pipeline_args,
+    )
 
     result = p.run()
     result.wait_until_finish()
@@ -164,6 +165,3 @@ def main(argv=None):
 if __name__ == '__main__':
     logging.getLogger().setLevel(logging.INFO)
     main()
-
-if __name__ == '__main__':
-# [END pubsub_quickstart_sub_all]
